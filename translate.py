@@ -9,23 +9,21 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
 src_text = "Hello, how are you?"
-# Fix: Remove src_lang parameter and set source language in tokenizer
 tokenizer.src_lang = "eng_Latn"
 tokens = tokenizer(src_text, return_tensors="pt")
 generated = model.generate(**tokens, forced_bos_token_id=tokenizer.convert_tokens_to_ids("slk_Latn"))
 print(tokenizer.decode(generated[0], skip_special_tokens=True))
 
 def extract_text_from_docx(docx_path):
-    """Extract text from DOCX file directly"""
     results = []
     doc = Document(docx_path)
     
     for para_num, paragraph in enumerate(doc.paragraphs, start=1):
-        if paragraph.text.strip():  # Skip empty paragraphs
+        if paragraph.text.strip():  
             results.append({
                 "text": paragraph.text.strip(),
-                "bbox": None,  # DOCX doesn't have bbox info
-                "page": para_num  # Use paragraph number as page reference
+                "bbox": None,  
+                "page": para_num 
             })
     return results
 
@@ -46,7 +44,7 @@ def extract_text_with_layout(pdf_path, merge_threshold=10):
             }
             
             for word in words[1:]:
-                # Check if word is close enough to current group (same line or nearby)
+                # Check if word is close enough to current group
                 prev_word = current_group["words"][-1]
                 
                 # Merge if words are on same line (similar y-coordinates) and close horizontally
@@ -77,7 +75,6 @@ def extract_text_with_layout(pdf_path, merge_threshold=10):
                         "words": [word]
                     }
             
-            # Don't forget the last group
             if current_group:
                 results.append({
                     "text": current_group["text"],
@@ -87,10 +84,9 @@ def extract_text_with_layout(pdf_path, merge_threshold=10):
     
     return results
 
-# === USAGE ===
+
 docx_file = "User manual ProfileManagerWeb_v4.3.301 ENG.docx"  # Your .docx file
 
-# Load the original document
 doc = Document(docx_file)
 
 count = 0
@@ -100,7 +96,7 @@ start_time = time.time()
 print(f"Starting translation of {total_paragraphs} paragraphs...")
 
 for paragraph in doc.paragraphs:
-    if paragraph.text.strip():  # Only process non-empty paragraphs
+    if paragraph.text.strip():
         # Calculate progress and time estimates
         current_time = time.time()
         elapsed_time = current_time - start_time
@@ -125,29 +121,49 @@ for paragraph in doc.paragraphs:
         original_text = paragraph.text.strip()
         print(f"[Para {count}] {original_text}")
         
-        # Translate the text from English to Slovak
-        tokenizer.src_lang = "slk_Latn"  # Set source language to English
+        # Translate the text from Slovak to English
+        tokenizer.src_lang = "slk_Latn"  # Set source language to Slovak
         tokens = tokenizer(original_text, return_tensors="pt")
         generated = model.generate(**tokens, forced_bos_token_id=tokenizer.convert_tokens_to_ids("eng_Latn"))
         translated_text = tokenizer.decode(generated[0], skip_special_tokens=True)
         print(f"Translated: {translated_text}")
         
-        # Clear the paragraph and add translated text while preserving formatting
-        # Save the original formatting
-        runs = paragraph.runs
-        if runs:
-            # Keep the first run's formatting and clear all runs
-            first_run_format = runs[0]._element
-            paragraph.clear()
+        # Attempt to apply original formatting
+        try:
+            # Save the original formatting
+            runs = paragraph.runs
+            if runs:
+                # Keep the first run's formatting and clear all runs
+                first_run_format = runs[0]._element
+                paragraph.clear()
+                
+                # Add the translated text with original formatting
+                new_run = paragraph.add_run(translated_text)
+                # Try to copy formatting from the first run
+                if hasattr(first_run_format, 'rPr') and first_run_format.rPr is not None:
+                    new_run._element.rPr = first_run_format.rPr
+            else:
+                # If no runs, just replace the text
+                paragraph.text = translated_text
+                
+        except (AttributeError, Exception) as e:
+            print(f"ERROR: Could not apply formatting: {e}")
+            print(f"Keeping original text and highlighting it")
             
-            # Add the translated text with original formatting
-            new_run = paragraph.add_run(translated_text)
-            # Copy formatting from the first run
-            if hasattr(first_run_format, 'rPr') and first_run_format.rPr is not None:
-                new_run._element.rPr = first_run_format.rPr
-        else:
-            # If no runs, just replace the text
-            paragraph.text = translated_text
+            # Keep original text but highlight it for manual review
+            paragraph.clear()
+            highlighted_run = paragraph.add_run(f"[TRANSLATION ERROR - MANUAL REVIEW NEEDED] {original_text}")
+            
+            # Add yellow highlighting if possible
+            try:
+                from docx.shared import RGBColor
+                from docx.enum.text import WD_COLOR_INDEX
+                highlighted_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                highlighted_run.font.color.rgb = RGBColor(255, 0, 0)  # Red text
+                highlighted_run.bold = True
+            except:
+                # If highlighting fails, just make it bold and add marker
+                highlighted_run.bold = True
         
         print("-" * 40)
 
@@ -156,7 +172,12 @@ total_time = time.time() - start_time
 total_mins = int(total_time // 60)
 total_secs = int(total_time % 60)
 
+print(f"\n✅ Translation completed!")
+print(f"📊 Total paragraphs translated: {total_paragraphs}")
+print(f"⏱️  Total time: {total_mins:02d}:{total_secs:02d}")
+print(f"⚡ Average time per paragraph: {total_time/total_paragraphs:.2f} seconds")
+
 # Save the translated document with a new name
-output_filename = "User_manual_ProfileManagerWeb_v4.3.301_ENG.docx"
+output_filename = "User_manual_ProfileManagerWeb_v4.3.301_ENG_TRANSLATED.docx"
 doc.save(output_filename)
-print(f"Translated document saved as: {output_filename}")
+print(f"💾 Translated document saved as: {output_filename}")
