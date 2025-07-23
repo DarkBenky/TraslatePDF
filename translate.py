@@ -8,8 +8,10 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
 src_text = "Hello, how are you?"
-tokens = tokenizer(src_text, return_tensors="pt", src_lang="eng_Latn")
-generated = model.generate(**tokens, forced_bos_token_id=tokenizer.lang_code_to_id["slk_Latn"])
+# Fix: Remove src_lang parameter and set source language in tokenizer
+tokenizer.src_lang = "eng_Latn"
+tokens = tokenizer(src_text, return_tensors="pt")
+generated = model.generate(**tokens, forced_bos_token_id=tokenizer.convert_tokens_to_ids("slk_Latn"))
 print(tokenizer.decode(generated[0], skip_special_tokens=True))
 
 def convert_docx_to_pdf(docx_path, output_dir="."):
@@ -30,15 +32,17 @@ def extract_text_with_layout(pdf_path):
     return results
 
 # === USAGE ===
-docx_file = "example.docx"  # Your .docx file
-output_pdf = convert_docx_to_pdf(docx_file)
-data = extract_text_with_layout(output_pdf)
+# docx_file = "example.docx"  # Your .docx file
+pdf_file = "example.pdf"  # Optional: if you already have a PDF file
+# output_pdf = convert_docx_to_pdf(docx_file)
+data = extract_text_with_layout(pdf_file)
 
 for item in data:
-    print(f"[Page {item['page']}] {item['text']} -> BBox: {item['bbox']}")
+    print(f"[Page {item['page']}] {item['text']} -> BBox: {item['bbox']} -> Text : {item['text']}")
     # translate the slovak text to English
-    tokens = tokenizer(item['text'], return_tensors="pt", src_lang="slk_Latn")
-    generated = model.generate(**tokens, forced_bos_token_id=tokenizer.lang_code_to_id["eng_Latn"])
+    tokenizer.src_lang = "slk_Latn"  # Set source language to Slovak
+    tokens = tokenizer(item['text'], return_tensors="pt")
+    generated = model.generate(**tokens, forced_bos_token_id=tokenizer.convert_tokens_to_ids("eng_Latn"))
     translated_text = tokenizer.decode(generated[0], skip_special_tokens=True)
     print(f"Translated: {translated_text}")
     print("-" * 40)
