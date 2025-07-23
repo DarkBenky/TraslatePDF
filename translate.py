@@ -36,3 +36,9 @@ data = extract_text_with_layout(output_pdf)
 
 for item in data:
     print(f"[Page {item['page']}] {item['text']} -> BBox: {item['bbox']}")
+    # translate the slovak text to English
+    tokens = tokenizer(item['text'], return_tensors="pt", src_lang="slk_Latn")
+    generated = model.generate(**tokens, forced_bos_token_id=tokenizer.lang_code_to_id["eng_Latn"])
+    translated_text = tokenizer.decode(generated[0], skip_special_tokens=True)
+    print(f"Translated: {translated_text}")
+    print("-" * 40)
