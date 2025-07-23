@@ -47,6 +47,7 @@ translated:""".strip()
 
 # Initialize NLLB model only if enabled
 if ENABLE_NLLB:
+    # "facebook/nllb-200-distilled-600M" is a smaller model, but "facebook/nllb-200-distilled-1.3B" is more accurate
     model_name = "facebook/nllb-200-distilled-600M"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
