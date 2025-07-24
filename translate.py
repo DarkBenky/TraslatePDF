@@ -19,8 +19,9 @@ print(f"  NLLB: {'Yes' if ENABLE_NLLB else 'No'}")
 print(f"  Ollama: {'Yes' if ENABLE_OLLAMA else 'No'}")
 print("-" * 40)
 
-def translate(text: str) -> str:
-    prompt = f"""
+def translate(text: str, max_retries: int = 3) -> str:
+    for attempt in range(max_retries + 1):
+        prompt = f"""
 You are a translation machine. Translate the following sentence to English.
 Respond ONLY in this format:
 translated: <translated text>
@@ -28,22 +29,32 @@ translated: <translated text>
 Sentence: "{text}"
 translated:""".strip()
 
-    # Run the llama3.1 model through Ollama
-    result = subprocess.run(
-        ["ollama", "run", "llama3.1:latest", prompt],
-        capture_output=True,
-        text=True
-    )
+        # Run the llama3.1 model through Ollama
+        result = subprocess.run(
+            ["ollama", "run", "llama3.1:latest", prompt],
+            capture_output=True,
+            text=True
+        )
 
-    # Extract output
-    output = result.stdout.strip()
+        # Extract output
+        output = result.stdout.strip()
 
-    # Find the line that starts with "translated:"
-    for line in output.splitlines():
-        if line.lower().startswith("translated:"):
-            return line
+        # Find the line that starts with "translated:"
+        for line in output.splitlines():
+            if line.lower().startswith("translated:"):
+                # strip the upper quotes at the start and end
+                if line.startswith('"') and line.endswith('"'):
+                    line = line[1:-1].strip()
+                elif line.startswith("'") and line.endswith("'"):
+                    line = line[1:-1].strip()
+                return line
 
-    return "No valid translation found."
+        # If no valid translation found and we have retries left
+        if attempt < max_retries:
+            print(f"  Retry attempt {attempt + 1}/{max_retries} for translation...")
+            time.sleep(1)  # Brief pause before retry
+        
+    return f"[TRANSLATION FAILED AFTER {max_retries} RETRIES] {text}"
 
 # Initialize NLLB model only if enabled
 if ENABLE_NLLB:
@@ -280,10 +291,43 @@ if ENABLE_OLLAMA:
                 # Remove the "translated:" prefix if present
                 if translated_text.lower().startswith("translated:"):
                     translated_text = translated_text[11:].strip()
+                
+                # Check if translation failed after retries
+                if translated_text.startswith("[TRANSLATION FAILED AFTER"):
+                    print(f"Olloma Translation FAILED: {translated_text}")
+                    # Apply highlighting for failed translation
+                    paragraph.clear()
+                    highlighted_run = paragraph.add_run(translated_text)
+                    
+                    # Add red highlighting for failed translations
+                    try:
+                        from docx.shared import RGBColor
+                        from docx.enum.text import WD_COLOR_INDEX
+                        highlighted_run.font.highlight_color = WD_COLOR_INDEX.RED
+                        highlighted_run.font.color.rgb = RGBColor(255, 255, 255)  # White text
+                        highlighted_run.bold = True
+                    except:
+                        highlighted_run.bold = True
+                    continue  # Skip to next paragraph
+                
                 print(f"Olloma Translated: {translated_text}")
             except Exception as e:
                 print(f"WARNING: Olloma translation failed: {e}")
                 translated_text = f"[OLLAMA TRANSLATION FAILED] {original_text}"
+                
+                # Apply highlighting for exception-based failures
+                paragraph.clear()
+                highlighted_run = paragraph.add_run(translated_text)
+                
+                try:
+                    from docx.shared import RGBColor
+                    from docx.enum.text import WD_COLOR_INDEX
+                    highlighted_run.font.highlight_color = WD_COLOR_INDEX.RED
+                    highlighted_run.font.color.rgb = RGBColor(255, 255, 255)  # White text
+                    highlighted_run.bold = True
+                except:
+                    highlighted_run.bold = True
+                continue  # Skip to next paragraph
             
             # Apply translation with error handling
             try:
