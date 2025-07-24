@@ -291,6 +291,11 @@ if ENABLE_OLLAMA:
                 # Remove the "translated:" prefix if present
                 if translated_text.lower().startswith("translated:"):
                     translated_text = translated_text[11:].strip()
+                # remove the quotes at the start and end
+                if translated_text.startswith('"') and translated_text.endswith('"'):
+                    translated_text = translated_text[1:-1].strip()
+                elif translated_text.startswith("'") and translated_text.endswith("'"):
+                    translated_text = translated_text[1:-1].strip()
                 
                 # Check if translation failed after retries
                 if translated_text.startswith("[TRANSLATION FAILED AFTER"):
@@ -379,7 +384,11 @@ if ENABLE_OLLAMA:
     print(f"Average time per paragraph: {total_time_ollama/total_paragraphs_ollama:.2f} seconds")
 
     # Save the Ollama translated document
-    output_filename_ollama = "User_manual_ProfileManagerWeb_v4.3.301_ENG_OLLAMA.docx"
+    import time
+
+    readable_time = time.strftime("%Y%m%d_%H%M%S", time.localtime(current_time))
+
+    output_filename_ollama = f"User_manual_ProfileManagerWeb_v4.3.301_ENG_OLLAMA_{readable_time}.docx"
     doc_ollama.save(output_filename_ollama)
     print(f"Olloma translated document saved as: {output_filename_ollama}")
 
