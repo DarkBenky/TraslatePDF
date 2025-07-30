@@ -43,6 +43,7 @@ Current sentence to translate: "{text}"
 translated:""".strip()
 
         # Run the llama3.1 model through Ollama
+        # alternative deepseek-r1:32b
         result = subprocess.run(
             ["ollama", "run", "llama3.1:latest", prompt],
             capture_output=True,
