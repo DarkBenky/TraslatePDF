@@ -4,6 +4,8 @@ import pdfplumber
 from docx import Document
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import subprocess
+from docx.shared import RGBColor
+from docx.enum.text import WD_COLOR_INDEX
 
 ENABLE_OLLAMA = True  # Set to False to disable Ollama LLM translation
 ENABLE_NLLB = False  # Set to False to disable NLLB translation
@@ -19,14 +21,25 @@ print(f"  NLLB: {'Yes' if ENABLE_NLLB else 'No'}")
 print(f"  Ollama: {'Yes' if ENABLE_OLLAMA else 'No'}")
 print("-" * 40)
 
-def translate(text: str, max_retries: int = 3) -> str:
+def translate_with_context(text: str, context_paragraphs: list = None, max_retries: int = 3) -> str:
+    """
+    Translate text with optional context from previous paragraphs
+    """
     for attempt in range(max_retries + 1):
+        # Build context section
+        context_section = ""
+        if context_paragraphs and len(context_paragraphs) > 0:
+            context_section = "\n\nPrevious context for better translation:\n"
+            for i, ctx in enumerate(context_paragraphs[-3:], 1):  # Use last 3 paragraphs as context
+                context_section += f"Context {i}: \"{ctx}\"\n"
+        
         prompt = f"""
-You are a translation machine. Translate the following sentence to English.
+You are a professional translation machine. Translate the following sentence from Slovak to English.
+Use the provided context to ensure consistency and accuracy.
 Respond ONLY in this format:
 translated: <translated text>
-
-Sentence: "{text}"
+{context_section}
+Current sentence to translate: "{text}"
 translated:""".strip()
 
         # Run the llama3.1 model through Ollama
@@ -42,12 +55,16 @@ translated:""".strip()
         # Find the line that starts with "translated:"
         for line in output.splitlines():
             if line.lower().startswith("translated:"):
-                # strip the upper quotes at the start and end
-                if line.startswith('"') and line.endswith('"'):
-                    line = line[1:-1].strip()
-                elif line.startswith("'") and line.endswith("'"):
-                    line = line[1:-1].strip()
-                return line
+                # Clean up the translation
+                translation = line[11:].strip()  # Remove "translated:" prefix
+                
+                # Remove quotes if present
+                if translation.startswith('"') and translation.endswith('"'):
+                    translation = translation[1:-1].strip()
+                elif translation.startswith("'") and translation.endswith("'"):
+                    translation = translation[1:-1].strip()
+                
+                return translation
 
         # If no valid translation found and we have retries left
         if attempt < max_retries:
@@ -55,6 +72,54 @@ translated:""".strip()
             time.sleep(1)  # Brief pause before retry
         
     return f"[TRANSLATION FAILED AFTER {max_retries} RETRIES] {text}"
+
+# Add formatting function
+def apply_translation_with_formatting(paragraph, translated_text, original_text, error_prefix=""):
+    """Apply translation while preserving formatting, with error handling."""
+    try:
+        # Collect all formatting from existing runs
+        original_runs_formatting = []
+        for run in paragraph.runs:
+            formatting = {
+                'bold': run.bold,
+                'italic': run.italic,
+                'underline': run.underline,
+                'font_name': run.font.name,
+                'font_size': run.font.size,
+                'color': run.font.color.rgb if run.font.color.rgb else None
+            }
+            original_runs_formatting.append(formatting)
+        
+        # Clear paragraph and add translated text
+        paragraph.clear()
+        new_run = paragraph.add_run(translated_text)
+        
+        # Apply formatting from first run if available
+        if original_runs_formatting:
+            fmt = original_runs_formatting[0]
+            if fmt['bold'] is not None:
+                new_run.bold = fmt['bold']
+            if fmt['italic'] is not None:
+                new_run.italic = fmt['italic']
+            if fmt['underline'] is not None:
+                new_run.underline = fmt['underline']
+            if fmt['font_name']:
+                new_run.font.name = fmt['font_name']
+            if fmt['font_size']:
+                new_run.font.size = fmt['font_size']
+            if fmt['color']:
+                new_run.font.color.rgb = fmt['color']
+        
+        return True
+        
+    except Exception as e:
+        print(f"ERROR: Could not apply formatting: {e}")
+        return False
+
+# Replace the old translate function call with the new one
+def translate(text: str, max_retries: int = 3) -> str:
+    """Backward compatibility wrapper"""
+    return translate_with_context(text, None, max_retries)
 
 # Initialize NLLB model only if enabled
 if ENABLE_NLLB:
@@ -187,28 +252,12 @@ if ENABLE_NLLB:
             tokens = tokenizer(original_text, return_tensors="pt")
             generated = model.generate(**tokens, forced_bos_token_id=tokenizer.convert_tokens_to_ids("eng_Latn"))
             translated_text = tokenizer.decode(generated[0], skip_special_tokens=True)
-            print(f"Translated: {translated_text}")
             
             # Attempt to apply original formatting
-            try:
-                # Save the original formatting
-                runs = paragraph.runs
-                if runs:
-                    # Keep the first run's formatting and clear all runs
-                    first_run_format = runs[0]._element
-                    paragraph.clear()
-                    
-                    # Add the translated text with original formatting
-                    new_run = paragraph.add_run(translated_text)
-                    # Try to copy formatting from the first run
-                    if hasattr(first_run_format, 'rPr') and first_run_format.rPr is not None:
-                        new_run._element.rPr = first_run_format.rPr
-                else:
-                    # If no runs, just replace the text
-                    paragraph.text = translated_text
-                    
-            except (AttributeError, Exception) as e:
-                print(f"ERROR: Could not apply formatting: {e}")
+            success = apply_translation_with_formatting(paragraph, translated_text, original_text, "NLLB ")
+            if success:
+                print(f"Translated: {translated_text}")
+            else:
                 print(f"Keeping original text and highlighting it")
                 
                 # Keep original text but highlight it for manual review
@@ -217,8 +266,6 @@ if ENABLE_NLLB:
                 
                 # Add yellow highlighting if possible
                 try:
-                    from docx.shared import RGBColor
-                    from docx.enum.text import WD_COLOR_INDEX
                     highlighted_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
                     highlighted_run.font.color.rgb = RGBColor(255, 0, 0)  # Red text
                     highlighted_run.bold = True
@@ -256,6 +303,9 @@ if ENABLE_OLLAMA:
     count_ollama = 0
     total_paragraphs_ollama = len([p for p in doc_ollama.paragraphs if p.text.strip()])
     start_time_ollama = time.time()
+    
+    # Store context for better translation
+    translated_context = []  # Keep track of translated paragraphs for context
 
     print(f"Starting Ollama translation of {total_paragraphs_ollama} paragraphs...")
 
@@ -276,22 +326,25 @@ if ENABLE_OLLAMA:
                 remaining_mins = int(estimated_remaining_time // 60)
                 remaining_secs = int(estimated_remaining_time % 60)
                 
-                print(f"Olloma Progress {count_ollama}/{total_paragraphs_ollama} | Elapsed: {elapsed_mins:02d}:{elapsed_secs:02d} | Est. remaining: {remaining_mins:02d}:{remaining_secs:02d}")
+                print(f"Ollama Progress {count_ollama}/{total_paragraphs_ollama} | Elapsed: {elapsed_mins:02d}:{elapsed_secs:02d} | Est. remaining: {remaining_mins:02d}:{remaining_secs:02d}")
             else:
-                print(f"Olloma Progress {count_ollama}/{total_paragraphs_ollama} | Starting...")
+                print(f"Ollama Progress {count_ollama}/{total_paragraphs_ollama} | Starting...")
             
             count_ollama += 1
             
             original_text = paragraph.text.strip()
-            print(f"[Olloma Para {count_ollama}] {original_text}")
+            print(f"[Ollama Para {count_ollama}] {original_text}")
             
-            # Use Ollama LLM translation
+            # Use Ollama LLM translation with context
             try:
-                translated_text = translate(original_text)
+                # Use context-aware translation
+                translated_text = translate_with_context(original_text, translated_context)
+                
                 # Remove the "translated:" prefix if present
                 if translated_text.lower().startswith("translated:"):
                     translated_text = translated_text[11:].strip()
-                # remove the quotes at the start and end
+                
+                # Remove quotes at the start and end
                 if translated_text.startswith('"') and translated_text.endswith('"'):
                     translated_text = translated_text[1:-1].strip()
                 elif translated_text.startswith("'") and translated_text.endswith("'"):
@@ -299,15 +352,13 @@ if ENABLE_OLLAMA:
                 
                 # Check if translation failed after retries
                 if translated_text.startswith("[TRANSLATION FAILED AFTER"):
-                    print(f"Olloma Translation FAILED: {translated_text}")
+                    print(f"Ollama Translation FAILED: {translated_text}")
                     # Apply highlighting for failed translation
                     paragraph.clear()
                     highlighted_run = paragraph.add_run(translated_text)
                     
                     # Add red highlighting for failed translations
                     try:
-                        from docx.shared import RGBColor
-                        from docx.enum.text import WD_COLOR_INDEX
                         highlighted_run.font.highlight_color = WD_COLOR_INDEX.RED
                         highlighted_run.font.color.rgb = RGBColor(255, 255, 255)  # White text
                         highlighted_run.bold = True
@@ -315,9 +366,15 @@ if ENABLE_OLLAMA:
                         highlighted_run.bold = True
                     continue  # Skip to next paragraph
                 
-                print(f"Olloma Translated: {translated_text}")
+                # Add successful translation to context for next paragraphs
+                translated_context.append(translated_text)
+                # Keep only last 5 paragraphs as context to avoid too much text
+                if len(translated_context) > 5:
+                    translated_context.pop(0)
+                
+                print(f"Ollama Translated: {translated_text}")
             except Exception as e:
-                print(f"WARNING: Olloma translation failed: {e}")
+                print(f"WARNING: Ollama translation failed: {e}")
                 translated_text = f"[OLLAMA TRANSLATION FAILED] {original_text}"
                 
                 # Apply highlighting for exception-based failures
@@ -325,8 +382,6 @@ if ENABLE_OLLAMA:
                 highlighted_run = paragraph.add_run(translated_text)
                 
                 try:
-                    from docx.shared import RGBColor
-                    from docx.enum.text import WD_COLOR_INDEX
                     highlighted_run.font.highlight_color = WD_COLOR_INDEX.RED
                     highlighted_run.font.color.rgb = RGBColor(255, 255, 255)  # White text
                     highlighted_run.bold = True
@@ -335,25 +390,10 @@ if ENABLE_OLLAMA:
                 continue  # Skip to next paragraph
             
             # Apply translation with error handling
-            try:
-                # Save the original formatting
-                runs = paragraph.runs
-                if runs:
-                    # Keep the first run's formatting and clear all runs
-                    first_run_format = runs[0]._element
-                    paragraph.clear()
-                    
-                    # Add the translated text with original formatting
-                    new_run = paragraph.add_run(translated_text)
-                    # Try to copy formatting from the first run
-                    if hasattr(first_run_format, 'rPr') and first_run_format.rPr is not None:
-                        new_run._element.rPr = first_run_format.rPr
-                else:
-                    # If no runs, just replace the text
-                    paragraph.text = translated_text
-                    
-            except (AttributeError, Exception) as e:
-                print(f"ERROR: Could not apply Olloma formatting: {e}")
+            success = apply_translation_with_formatting(paragraph, translated_text, original_text, "OLLAMA ")
+            if success:
+                print(f"Ollama Applied: {translated_text}")
+            else:
                 print(f"Keeping original text and highlighting it")
                 
                 # Keep original text but highlight it for manual review
@@ -362,8 +402,6 @@ if ENABLE_OLLAMA:
                 
                 # Add yellow highlighting if possible
                 try:
-                    from docx.shared import RGBColor
-                    from docx.enum.text import WD_COLOR_INDEX
                     highlighted_run.font.highlight_color = WD_COLOR_INDEX.YELLOW
                     highlighted_run.font.color.rgb = RGBColor(0, 0, 255)  # Blue text for Olloma errors
                     highlighted_run.bold = True
