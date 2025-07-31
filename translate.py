@@ -42,37 +42,62 @@ translated: <translated text>
 Current sentence to translate: "{text}"
 translated:""".strip()
 
-        # Run the llama3.1 model through Ollama
-        # alternative deepseek-r1:32b
-        result = subprocess.run(
-            ["ollama", "run", "llama3.1:latest", prompt],
-            capture_output=True,
-            text=True
-        )
+        models = ["gemma3:27b-it-qat", "deepseek-r1:32b", "llama3.1:latest"]
 
-        # Extract output
-        output = result.stdout.strip()
+        # Try each model until one succeeds
+        for model in models:
+            print(f"  Trying model: {model}")
+            
+            try:
+                result = subprocess.run(
+                    ["ollama", "run", model, prompt],
+                    capture_output=True,
+                    text=True,
+                    timeout=120  # 2 minute timeout per model
+                )
 
-        # Find the line that starts with "translated:"
-        for line in output.splitlines():
-            if line.lower().startswith("translated:"):
-                # Clean up the translation
-                translation = line[11:].strip()  # Remove "translated:" prefix
+                # Extract output
+                output = result.stdout.strip()
                 
-                # Remove quotes if present
-                if translation.startswith('"') and translation.endswith('"'):
-                    translation = translation[1:-1].strip()
-                elif translation.startswith("'") and translation.endswith("'"):
-                    translation = translation[1:-1].strip()
-                
-                return translation
+                # Handle DeepSeek thinking part removal
+                if model == "deepseek-r1:32b" and "<think>" in output:
+                    # Find the end of thinking section
+                    think_end = output.find("</think>")
+                    if think_end != -1:
+                        # Remove everything up to and including </think>
+                        output = output[think_end + 8:].strip()
 
-        # If no valid translation found and we have retries left
+                # Find the line that starts with "translated:"
+                for line in output.splitlines():
+                    if line.lower().startswith("translated:"):
+                        # Clean up the translation
+                        translation = line[11:].strip()  # Remove "translated:" prefix
+                        
+                        # Remove quotes if present
+                        if translation.startswith('"') and translation.endswith('"'):
+                            translation = translation[1:-1].strip()
+                        elif translation.startswith("'") and translation.endswith("'"):
+                            translation = translation[1:-1].strip()
+                        
+                        if translation:  # Make sure we have actual content
+                            print(f"  Success with {model}")
+                            return translation
+
+                print(f"  Model {model} failed to produce valid translation")
+                
+            except subprocess.TimeoutExpired:
+                print(f"  Model {model} timed out")
+                continue
+            except Exception as e:
+                print(f"  Model {model} error: {e}")
+                continue
+
+        # If no model succeeded and we have retries left
         if attempt < max_retries:
-            print(f"  Retry attempt {attempt + 1}/{max_retries} for translation...")
-            time.sleep(1)  # Brief pause before retry
+            print(f"  All models failed. Retry attempt {attempt + 1}/{max_retries}...")
+            time.sleep(2)  # Brief pause before retry
         
-    return f"[TRANSLATION FAILED AFTER {max_retries} RETRIES] {text}"
+    return f"[TRANSLATION FAILED AFTER {max_retries} RETRIES WITH ALL MODELS] {text}"
 
 # Add formatting function
 def apply_translation_with_formatting(paragraph, translated_text, original_text, error_prefix=""):
