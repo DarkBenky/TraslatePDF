@@ -317,7 +317,7 @@ if ENABLE_NLLB:
     import time
     readable_time = time.strftime("%Y%m%d_%H%M%S", time.localtime(current_time))
 
-    output_filename = docx_file.replace(".docx", f"_LLAMA{readable_time}.docx")
+    output_filename = docx_file.replace(".docx", f"_NNLB_{readable_time}.docx")
     doc.save(output_filename)
     print(f"NLLB translated document saved as: {output_filename}")
 
@@ -456,7 +456,7 @@ if ENABLE_OLLAMA:
 
     readable_time = time.strftime("%Y%m%d_%H%M%S", time.localtime(current_time))
 
-    output_filename_ollama = f"{docx_file}_{readable_time}.docx"
+    output_filename_ollama = f"{docx_file.replace(".docx", "_OLLAMA_")}{readable_time}.docx"
     doc_ollama.save(output_filename_ollama)
     print(f"Olloma translated document saved as: {output_filename_ollama}")
 
