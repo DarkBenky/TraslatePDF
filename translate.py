@@ -9,6 +9,7 @@ from docx.enum.text import WD_COLOR_INDEX
 
 ENABLE_OLLAMA = True  # Set to False to disable Ollama LLM translation
 ENABLE_NLLB = False  # Set to False to disable NLLB translation
+docx_file = "User manual ProfileManagerWeb_v4.3.301 ENG.docx"  # Your .docx file
 
 # Validate flags
 if not ENABLE_OLLAMA and not ENABLE_NLLB:
@@ -231,7 +232,7 @@ def extract_text_with_layout(pdf_path, merge_threshold=10):
     return results
 
 
-docx_file = "User manual ProfileManagerWeb_v4.3.301 ENG.docx"  # Your .docx file
+
 
 # === NLLB TRANSLATION ===
 if ENABLE_NLLB:
@@ -313,7 +314,10 @@ if ENABLE_NLLB:
     print(f"Average time per paragraph: {total_time/total_paragraphs:.2f} seconds")
 
     # Save the NLLB translated document
-    output_filename = "User_manual_ProfileManagerWeb_v4.3.301_ENG_NLLB.docx"
+    import time
+    readable_time = time.strftime("%Y%m%d_%H%M%S", time.localtime(current_time))
+
+    output_filename = docx_file.replace(".docx", f"_LLAMA{readable_time}.docx")
     doc.save(output_filename)
     print(f"NLLB translated document saved as: {output_filename}")
 
@@ -452,7 +456,7 @@ if ENABLE_OLLAMA:
 
     readable_time = time.strftime("%Y%m%d_%H%M%S", time.localtime(current_time))
 
-    output_filename_ollama = f"User_manual_ProfileManagerWeb_v4.3.301_ENG_OLLAMA_{readable_time}.docx"
+    output_filename_ollama = f"{docx_file}_{readable_time}.docx"
     doc_ollama.save(output_filename_ollama)
     print(f"Olloma translated document saved as: {output_filename_ollama}")
 
