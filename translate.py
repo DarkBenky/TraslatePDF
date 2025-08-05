@@ -9,7 +9,7 @@ from docx.enum.text import WD_COLOR_INDEX
 
 ENABLE_OLLAMA = True  # Set to False to disable Ollama LLM translation
 ENABLE_NLLB = False  # Set to False to disable NLLB translation
-docx_file = "User manual ProfileManagerWeb_v4.3.301 ENG.docx"  # Your .docx file
+docx_file = "MANUAL_PMW_ENG_MIRKA.docx"  # Your .docx file
 
 # Validate flags
 if not ENABLE_OLLAMA and not ENABLE_NLLB:
@@ -456,9 +456,9 @@ if ENABLE_OLLAMA:
 
     readable_time = time.strftime("%Y%m%d_%H%M%S", time.localtime(current_time))
 
-    output_filename_ollama = f"{docx_file.replace(".docx", "_OLLAMA_")}{readable_time}.docx"
+    output_filename_ollama = docx_file.replace(".docx", f"_OLLAMA_{readable_time}.docx")
     doc_ollama.save(output_filename_ollama)
-    print(f"Olloma translated document saved as: {output_filename_ollama}")
+    print(f"Ollama translated document saved as: {output_filename_ollama}")
 
 # Final summary
 print("\n" + "="*60)
